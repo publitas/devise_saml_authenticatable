@@ -5,6 +5,7 @@ class Devise::SamlSessionsController < Devise::SessionsController
 
   skip_before_action :verify_authenticity_token, raise: false
   prepend_before_action :verify_signed_out_user, :store_info_for_sp_initiated_logout, only: :destroy
+  prepend_before_action :allow_saml_authentication!, only: :create
 
   def new
     idp_entity_id = get_idp_entity_id(params)
@@ -93,5 +94,9 @@ class Devise::SamlSessionsController < Devise::SessionsController
     params[:RelayState] = relay_state if relay_state
 
     OneLogin::RubySaml::SloLogoutresponse.new.create(saml_config, logout_request_id, nil, params)
+  end
+
+  def allow_saml_authentication!
+    request.env['devise.allow_saml_authentication'] = true
   end
 end
