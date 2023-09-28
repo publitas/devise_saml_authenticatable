@@ -4,15 +4,9 @@ module Devise
   module Strategies
     class SamlAuthenticatable < Authenticatable
       include DeviseSamlAuthenticatable::SamlConfig
+
       def valid?
-        if params[:SAMLResponse]
-          OneLogin::RubySaml::Response.new(
-            params[:SAMLResponse],
-            response_options,
-          )
-        else
-          false
-        end
+        saml_authentication_allowed? && response_param_present? && idp_entity_id_present?
       end
 
       def authenticate!
@@ -32,24 +26,41 @@ module Devise
       end
 
       private
+
+      def saml_authentication_allowed?
+        !!env['devise.allow_saml_authentication']
+      end
+
+      def response_param_present?
+        params[:SAMLResponse].present?
+      end
+
+      def idp_entity_id_present?
+        get_idp_entity_id(params).present?
+      rescue StandardError
+        false
+      end
+
       def parse_saml_response
         @response = OneLogin::RubySaml::Response.new(
           params[:SAMLResponse],
           response_options,
         )
         unless @response.is_valid?
-          failed_auth("Auth errors: #{@response.errors.join(', ')}")
+          failed_auth
         end
       end
 
       def retrieve_resource
         @resource = mapping.to.authenticate_with_saml(@response, params[:RelayState])
         if @resource.nil?
-          failed_auth("Resource could not be found")
+          @response.append_error('Resource could not be found')
+          failed_auth
         end
       end
 
-      def failed_auth(msg)
+      def failed_auth
+        msg = "Auth errors: #{@response.errors.join(', ')}"
         DeviseSamlAuthenticatable::Logger.send(msg)
         fail!(:invalid)
         failed_callback.new.handle(@response, self) if Devise.saml_failed_callback
